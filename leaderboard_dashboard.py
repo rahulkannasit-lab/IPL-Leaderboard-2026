@@ -137,7 +137,7 @@ player_list = leaderboard["Player"].tolist()
 top_left, top_right = st.columns([3, 1])
 
 with top_left:
-    st.caption(f"Last updated: {last_updated}")
+   st.caption(f"Last refreshed: {last_updated}")
 
 with top_right:
     if st.button("🔄 Refresh", width="stretch"):
@@ -316,7 +316,8 @@ else:
         markers=True
     )
     fig_cum.update_layout(
-        height=390,
+legend_title_text="Player",        
+height=390,
         yaxis_title="Points",
         xaxis_title="Match",
         margin=dict(l=10, r=10, t=20, b=20)
