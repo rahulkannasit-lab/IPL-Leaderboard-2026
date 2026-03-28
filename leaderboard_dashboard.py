@@ -10,6 +10,36 @@ from datetime import datetime
 # ------------------------------
 st.set_page_config(page_title="Leaderboard Dashboard", layout="wide")
 
+# ------------------------------
+# CUSTOM STYLING
+# ------------------------------
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 1.2rem;
+    padding-bottom: 1.5rem;
+}
+h1, h2, h3 {
+    letter-spacing: -0.3px;
+}
+.metric-card {
+    border: 1px solid #e6e6e6;
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: #fafafa;
+}
+.section-card {
+    border: 1px solid #ececec;
+    border-radius: 16px;
+    padding: 14px 16px;
+    background: white;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------------------
+# HEADER
+# ------------------------------
 st.title("🏏 IPL Prediction Leaderboard")
 st.caption("Live leaderboard from Google Sheets")
 
@@ -78,7 +108,6 @@ long_df = df.melt(
     var_name="Player",
     value_name="Points"
 )
-
 long_df["Points"] = pd.to_numeric(long_df["Points"], errors="coerce").fillna(0)
 
 # ------------------------------
@@ -100,6 +129,8 @@ leaderboard = leaderboard.sort_values(
 
 leaderboard["Rank"] = range(1, len(leaderboard) + 1)
 
+player_list = leaderboard["Player"].tolist()
+
 # ------------------------------
 # TOP BAR
 # ------------------------------
@@ -116,9 +147,7 @@ with top_right:
 # ------------------------------
 # SUMMARY METRICS
 # ------------------------------
-m1, m2 = st.columns(2)
-m3, m4 = st.columns(2)
-
+m1, m2, m3, m4 = st.columns(4)
 m1.metric("Players", len(leaderboard))
 m2.metric("Leader", leaderboard.iloc[0]["Player"])
 m3.metric("Top Points", int(leaderboard.iloc[0]["Total_Points"]))
@@ -134,23 +163,25 @@ st.subheader("🥇 Top 3 Players")
 top3 = leaderboard.head(3).copy()
 p1, p2, p3 = st.columns(3)
 
-def podium_card(container, title, row, medal):
+def podium_card(container, title, row, medal, highlight=False):
+    border = "#d9d9d9" if not highlight else "#c9a227"
+    background = "#fafafa" if not highlight else "#fffaf0"
     with container:
         st.markdown(
             f"""
             <div style="
-                border:1px solid #ddd;
-                border-radius:16px;
-                padding:16px;
-                text-align:center;
-                background:#fafafa;
-                min-height:160px;
+                border: 1px solid {border};
+                border-radius: 16px;
+                padding: 18px;
+                text-align: center;
+                background: {background};
+                min-height: 170px;
             ">
-                <div style="font-size:26px;">{medal}</div>
-                <div style="font-size:13px;color:#666;">{title}</div>
-                <div style="font-size:24px;font-weight:700;margin-top:8px;">{row['Player']}</div>
-                <div style="font-size:17px;margin-top:8px;">{int(row['Total_Points'])} pts</div>
-                <div style="font-size:12px;color:#666;margin-top:6px;">
+                <div style="font-size: 28px;">{medal}</div>
+                <div style="font-size: 13px; color: #666;">{title}</div>
+                <div style="font-size: 25px; font-weight: 700; margin-top: 8px;">{row['Player']}</div>
+                <div style="font-size: 18px; margin-top: 8px;">{int(row['Total_Points'])} pts</div>
+                <div style="font-size: 12px; color: #666; margin-top: 6px;">
                     Avg: {row['Avg_Points']} | Best: {int(row['Best_Score'])}
                 </div>
             </div>
@@ -159,7 +190,7 @@ def podium_card(container, title, row, medal):
         )
 
 if len(top3) >= 1:
-    podium_card(p1, "Rank 1", top3.iloc[0], "🥇")
+    podium_card(p1, "Rank 1", top3.iloc[0], "🥇", highlight=True)
 if len(top3) >= 2:
     podium_card(p2, "Rank 2", top3.iloc[1], "🥈")
 if len(top3) >= 3:
@@ -194,21 +225,32 @@ st.dataframe(
     hide_index=True
 )
 
+st.divider()
+
 # ------------------------------
 # TOP PLAYERS CHART
 # ------------------------------
 st.subheader("📊 Top 10 Players")
 
 if leaderboard["Total_Points"].sum() > 0:
+    top10 = leaderboard.head(10).copy().sort_values("Total_Points", ascending=True)
+
     fig_top10 = px.bar(
-        leaderboard.head(10),
-        x="Player",
-        y="Total_Points",
+        top10,
+        x="Total_Points",
+        y="Player",
+        orientation="h",
         text="Total_Points",
         title="Top 10 by Total Points"
     )
     fig_top10.update_traces(textposition="outside")
-    fig_top10.update_layout(height=380)
+    fig_top10.update_layout(
+        height=420,
+        yaxis_title="",
+        xaxis_title="Points",
+        margin=dict(l=10, r=30, t=50, b=20)
+    )
+    fig_top10.update_xaxes(rangemode="tozero")
     st.plotly_chart(fig_top10, width="stretch")
 else:
     st.info("No points recorded yet. The top players chart will appear once scores are added.")
@@ -219,8 +261,6 @@ st.divider()
 # PLAYER VS PLAYER
 # ------------------------------
 st.subheader("⚔️ Player vs Player")
-
-player_list = leaderboard["Player"].tolist()
 
 v1, v2 = st.columns(2)
 player1 = v1.selectbox("Player 1", player_list, index=0)
@@ -234,7 +274,6 @@ else:
     p2_row = leaderboard[leaderboard["Player"] == player2].iloc[0]
 
     st.markdown("#### Quick Comparison")
-
     c1, c2 = st.columns(2)
 
     with c1:
@@ -259,7 +298,6 @@ else:
     )
 
     compare_df = p1_df.merge(p2_df, on="Match", how="outer").fillna(0)
-
     compare_df["Match"] = pd.Categorical(
         compare_df["Match"],
         categories=match_order,
@@ -267,17 +305,23 @@ else:
     )
     compare_df = compare_df.sort_values("Match")
 
-    compare_df[f"{player1}_Cumulative"] = compare_df[player1].cumsum()
-    compare_df[f"{player2}_Cumulative"] = compare_df[player2].cumsum()
+    compare_df[player1] = compare_df[player1].cumsum()
+    compare_df[player2] = compare_df[player2].cumsum()
 
     st.markdown("#### Cumulative Points Comparison")
     fig_cum = px.line(
         compare_df,
         x="Match",
-        y=[f"{player1}_Cumulative", f"{player2}_Cumulative"],
+        y=[player1, player2],
         markers=True
     )
-    fig_cum.update_layout(height=380)
+    fig_cum.update_layout(
+        height=390,
+        yaxis_title="Points",
+        xaxis_title="Match",
+        margin=dict(l=10, r=10, t=20, b=20)
+    )
+    fig_cum.update_yaxes(rangemode="tozero")
     st.plotly_chart(fig_cum, width="stretch")
 
 st.divider()
@@ -287,13 +331,9 @@ st.divider()
 # ------------------------------
 st.subheader("📈 Player Trend")
 
-selected_player = st.selectbox(
-    "Select Player",
-    player_list
-)
+selected_player = st.selectbox("Select Player", player_list)
 
 player_trend = long_df[long_df["Player"] == selected_player].copy()
-
 player_trend["Match"] = pd.Categorical(
     player_trend["Match"],
     categories=match_order,
@@ -309,7 +349,13 @@ if player_trend["Points"].sum() > 0:
         markers=True,
         title=f"{selected_player} - Match by Match Points"
     )
-    fig_trend.update_layout(height=380)
+    fig_trend.update_layout(
+        height=390,
+        yaxis_title="Points",
+        xaxis_title="Match",
+        margin=dict(l=10, r=10, t=45, b=20)
+    )
+    fig_trend.update_yaxes(rangemode="tozero")
     st.plotly_chart(fig_trend, width="stretch")
 else:
     st.info(f"{selected_player} does not have any points recorded yet.")
