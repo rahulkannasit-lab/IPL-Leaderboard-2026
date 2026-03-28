@@ -4,38 +4,12 @@ import plotly.express as px
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # ------------------------------
 # PAGE CONFIG
 # ------------------------------
 st.set_page_config(page_title="Leaderboard Dashboard", layout="wide")
-
-# ------------------------------
-# CUSTOM STYLING
-# ------------------------------
-st.markdown("""
-<style>
-.block-container {
-    padding-top: 1.2rem;
-    padding-bottom: 1.5rem;
-}
-h1, h2, h3 {
-    letter-spacing: -0.3px;
-}
-.metric-card {
-    border: 1px solid #e6e6e6;
-    border-radius: 14px;
-    padding: 14px 16px;
-    background: #fafafa;
-}
-.section-card {
-    border: 1px solid #ececec;
-    border-radius: 16px;
-    padding: 14px 16px;
-    background: white;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # ------------------------------
 # HEADER
@@ -67,21 +41,13 @@ def load_data():
     data = worksheet.get_all_values()
     df = pd.DataFrame(data[1:], columns=data[0])
 
-    # Rename first column to Match
     df.rename(columns={df.columns[0]: "Match"}, inplace=True)
 
-    # Validate COMPLETED column
-    if "COMPLETED" not in df.columns:
-        raise ValueError("Column 'COMPLETED' not found in Sheet 1.")
-
-    # Normalize completed flag
-    df["COMPLETED"] = df["COMPLETED"].astype(str).str.strip().str.upper()
-
-    # Keep only completed matches
+    df["COMPLETED"] = df["COMPLETED"].astype(str).str.upper().str.strip()
     df = df[df["COMPLETED"] == "YES"].copy()
 
-    # Convert player columns to numeric
     player_cols = [col for col in df.columns if col not in ["Match", "COMPLETED"]]
+
     for col in player_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
@@ -91,27 +57,25 @@ def load_data():
 # LOAD DATA
 # ------------------------------
 df = load_data()
-last_updated = datetime.now().strftime("%d-%b-%Y %I:%M:%S %p")
+
+# ✅ IST TIME FIX
+last_updated = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%b-%Y %I:%M:%S %p IST")
 
 if df.empty:
-    st.warning("No completed matches found yet. Mark matches as YES in the COMPLETED column.")
+    st.warning("No completed matches yet.")
     st.stop()
 
 match_order = df["Match"].tolist()
 completed_matches_count = df.shape[0]
 
 # ------------------------------
-# TRANSFORM DATA
+# TRANSFORM
 # ------------------------------
-long_df = df.melt(
-    id_vars=["Match"],
-    var_name="Player",
-    value_name="Points"
-)
+long_df = df.melt(id_vars=["Match"], var_name="Player", value_name="Points")
 long_df["Points"] = pd.to_numeric(long_df["Points"], errors="coerce").fillna(0)
 
 # ------------------------------
-# LEADERBOARD CALCULATIONS
+# LEADERBOARD
 # ------------------------------
 leaderboard = long_df.groupby("Player").agg(
     Total_Points=("Points", "sum"),
@@ -134,67 +98,49 @@ player_list = leaderboard["Player"].tolist()
 # ------------------------------
 # TOP BAR
 # ------------------------------
-top_left, top_right = st.columns([3, 1])
+col1, col2 = st.columns([3, 1])
 
-with top_left:
-   st.caption(f"Last refreshed: {last_updated}")
+with col1:
+    st.caption(f"Last refreshed: {last_updated}")
 
-with top_right:
-    if st.button("🔄 Refresh", width="stretch"):
+with col2:
+    if st.button("🔄 Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
 # ------------------------------
-# SUMMARY METRICS
+# METRICS
 # ------------------------------
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Players", len(leaderboard))
 m2.metric("Leader", leaderboard.iloc[0]["Player"])
 m3.metric("Top Points", int(leaderboard.iloc[0]["Total_Points"]))
-m4.metric("Completed Matches", int(completed_matches_count))
+m4.metric("Matches", int(completed_matches_count))
 
 st.divider()
 
 # ------------------------------
-# TOP 3 PODIUM
+# TOP 3
 # ------------------------------
 st.subheader("🥇 Top 3 Players")
 
-top3 = leaderboard.head(3).copy()
-p1, p2, p3 = st.columns(3)
+top3 = leaderboard.head(3)
+c1, c2, c3 = st.columns(3)
 
-def podium_card(container, title, row, medal, highlight=False):
-    border = "#d9d9d9" if not highlight else "#c9a227"
-    background = "#fafafa" if not highlight else "#fffaf0"
-    with container:
-        st.markdown(
-            f"""
-            <div style="
-                border: 1px solid {border};
-                border-radius: 16px;
-                padding: 18px;
-                text-align: center;
-                background: {background};
-                min-height: 170px;
-            ">
-                <div style="font-size: 28px;">{medal}</div>
-                <div style="font-size: 13px; color: #666;">{title}</div>
-                <div style="font-size: 25px; font-weight: 700; margin-top: 8px;">{row['Player']}</div>
-                <div style="font-size: 18px; margin-top: 8px;">{int(row['Total_Points'])} pts</div>
-                <div style="font-size: 12px; color: #666; margin-top: 6px;">
-                    Avg: {row['Avg_Points']} | Best: {int(row['Best_Score'])}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+def card(col, row, medal):
+    with col:
+        st.markdown(f"""
+        <div style="padding:20px; border-radius:12px; border:1px solid #eee; text-align:center;">
+            <h2>{medal}</h2>
+            <h3>{row['Player']}</h3>
+            <p><b>{int(row['Total_Points'])} pts</b></p>
+            <p>Avg: {row['Avg_Points']} | Best: {int(row['Best_Score'])}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-if len(top3) >= 1:
-    podium_card(p1, "Rank 1", top3.iloc[0], "🥇", highlight=True)
-if len(top3) >= 2:
-    podium_card(p2, "Rank 2", top3.iloc[1], "🥈")
-if len(top3) >= 3:
-    podium_card(p3, "Rank 3", top3.iloc[2], "🥉")
+if len(top3) > 0: card(c1, top3.iloc[0], "🥇")
+if len(top3) > 1: card(c2, top3.iloc[1], "🥈")
+if len(top3) > 2: card(c3, top3.iloc[2], "🥉")
 
 st.divider()
 
@@ -203,57 +149,25 @@ st.divider()
 # ------------------------------
 st.subheader("🏆 Leaderboard")
 
-leaderboard_display = leaderboard[[
-    "Rank",
-    "Player",
-    "Total_Points",
-    "Avg_Points",
-    "Best_Score"
-]].copy()
+display = leaderboard[["Rank", "Player", "Total_Points", "Avg_Points", "Best_Score"]]
+display.columns = ["Rank", "Player", "Total Points", "Avg Points", "Best Score"]
 
-leaderboard_display.columns = [
-    "Rank",
-    "Player",
-    "Total Points",
-    "Avg Points",
-    "Best Score"
-]
-
-st.dataframe(
-    leaderboard_display.reset_index(drop=True),
-    width="stretch",
-    hide_index=True
-)
+st.dataframe(display, use_container_width=True, hide_index=True)
 
 st.divider()
 
 # ------------------------------
-# TOP PLAYERS CHART
+# TOP 10 CHART
 # ------------------------------
-st.subheader("📊 Top 10 Players")
+st.subheader("📊 Top 10")
 
-if leaderboard["Total_Points"].sum() > 0:
-    top10 = leaderboard.head(10).copy().sort_values("Total_Points", ascending=True)
+top10 = leaderboard.head(10).sort_values("Total_Points")
 
-    fig_top10 = px.bar(
-        top10,
-        x="Total_Points",
-        y="Player",
-        orientation="h",
-        text="Total_Points",
-        title="Top 10 by Total Points"
-    )
-    fig_top10.update_traces(textposition="outside")
-    fig_top10.update_layout(
-        height=420,
-        yaxis_title="",
-        xaxis_title="Points",
-        margin=dict(l=10, r=30, t=50, b=20)
-    )
-    fig_top10.update_xaxes(rangemode="tozero")
-    st.plotly_chart(fig_top10, width="stretch")
-else:
-    st.info("No points recorded yet. The top players chart will appear once scores are added.")
+fig = px.bar(top10, x="Total_Points", y="Player", orientation="h", text="Total_Points")
+fig.update_layout(height=400)
+fig.update_xaxes(rangemode="tozero")
+
+st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
@@ -262,68 +176,36 @@ st.divider()
 # ------------------------------
 st.subheader("⚔️ Player vs Player")
 
-v1, v2 = st.columns(2)
-player1 = v1.selectbox("Player 1", player_list, index=0)
-player2_default = 1 if len(player_list) > 1 else 0
-player2 = v2.selectbox("Player 2", player_list, index=player2_default)
+p1, p2 = st.columns(2)
+player1 = p1.selectbox("Player 1", player_list)
+player2 = p2.selectbox("Player 2", player_list, index=1 if len(player_list) > 1 else 0)
 
-if player1 == player2:
-    st.warning("Select two different players.")
-else:
-    p1_row = leaderboard[leaderboard["Player"] == player1].iloc[0]
-    p2_row = leaderboard[leaderboard["Player"] == player2].iloc[0]
+if player1 != player2:
 
-    st.markdown("#### Quick Comparison")
-    c1, c2 = st.columns(2)
+    df1 = long_df[long_df["Player"] == player1][["Match", "Points"]]
+    df2 = long_df[long_df["Player"] == player2][["Match", "Points"]]
 
-    with c1:
-        st.markdown(f"**{player1}**")
-        a1, a2, a3 = st.columns(3)
-        a1.metric("Total", int(p1_row["Total_Points"]))
-        a2.metric("Avg", float(p1_row["Avg_Points"]))
-        a3.metric("Best", int(p1_row["Best_Score"]))
+    df1.rename(columns={"Points": player1}, inplace=True)
+    df2.rename(columns={"Points": player2}, inplace=True)
 
-    with c2:
-        st.markdown(f"**{player2}**")
-        b1, b2, b3 = st.columns(3)
-        b1.metric("Total", int(p2_row["Total_Points"]))
-        b2.metric("Avg", float(p2_row["Avg_Points"]))
-        b3.metric("Best", int(p2_row["Best_Score"]))
+    comp = df1.merge(df2, on="Match", how="outer").fillna(0)
 
-    p1_df = long_df[long_df["Player"] == player1][["Match", "Points"]].rename(
-        columns={"Points": player1}
-    )
-    p2_df = long_df[long_df["Player"] == player2][["Match", "Points"]].rename(
-        columns={"Points": player2}
+    comp["Match"] = pd.Categorical(comp["Match"], categories=match_order, ordered=True)
+    comp = comp.sort_values("Match")
+
+    comp[player1] = comp[player1].cumsum()
+    comp[player2] = comp[player2].cumsum()
+
+    fig2 = px.line(comp, x="Match", y=[player1, player2], markers=True)
+
+    fig2.update_layout(
+        legend_title_text="Player",
+        height=400
     )
 
-    compare_df = p1_df.merge(p2_df, on="Match", how="outer").fillna(0)
-    compare_df["Match"] = pd.Categorical(
-        compare_df["Match"],
-        categories=match_order,
-        ordered=True
-    )
-    compare_df = compare_df.sort_values("Match")
+    fig2.update_yaxes(rangemode="tozero")
 
-    compare_df[player1] = compare_df[player1].cumsum()
-    compare_df[player2] = compare_df[player2].cumsum()
-
-    st.markdown("#### Cumulative Points Comparison")
-    fig_cum = px.line(
-        compare_df,
-        x="Match",
-        y=[player1, player2],
-        markers=True
-    )
-    fig_cum.update_layout(
-legend_title_text="Player",        
-height=390,
-        yaxis_title="Points",
-        xaxis_title="Match",
-        margin=dict(l=10, r=10, t=20, b=20)
-    )
-    fig_cum.update_yaxes(rangemode="tozero")
-    st.plotly_chart(fig_cum, width="stretch")
+    st.plotly_chart(fig2, use_container_width=True)
 
 st.divider()
 
@@ -332,37 +214,13 @@ st.divider()
 # ------------------------------
 st.subheader("📈 Player Trend")
 
-selected_player = st.selectbox("Select Player", player_list)
+player = st.selectbox("Select Player", player_list)
 
-player_trend = long_df[long_df["Player"] == selected_player].copy()
-player_trend["Match"] = pd.Categorical(
-    player_trend["Match"],
-    categories=match_order,
-    ordered=True
-)
-player_trend = player_trend.sort_values("Match")
+trend = long_df[long_df["Player"] == player]
+trend["Match"] = pd.Categorical(trend["Match"], categories=match_order, ordered=True)
+trend = trend.sort_values("Match")
 
-if player_trend["Points"].sum() > 0:
-    fig_trend = px.line(
-        player_trend,
-        x="Match",
-        y="Points",
-        markers=True,
-        title=f"{selected_player} - Match by Match Points"
-    )
-    fig_trend.update_layout(
-        height=390,
-        yaxis_title="Points",
-        xaxis_title="Match",
-        margin=dict(l=10, r=10, t=45, b=20)
-    )
-    fig_trend.update_yaxes(rangemode="tozero")
-    st.plotly_chart(fig_trend, width="stretch")
-else:
-    st.info(f"{selected_player} does not have any points recorded yet.")
+fig3 = px.line(trend, x="Match", y="Points", markers=True)
+fig3.update_yaxes(rangemode="tozero")
 
-# ------------------------------
-# RAW DATA
-# ------------------------------
-with st.expander("Show Raw Completed Match Data"):
-    st.dataframe(df, width="stretch", hide_index=True)
+st.plotly_chart(fig3, use_container_width=True)
