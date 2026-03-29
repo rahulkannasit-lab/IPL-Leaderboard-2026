@@ -43,6 +43,9 @@ def load_data():
 
     df.rename(columns={df.columns[0]: "Match"}, inplace=True)
 
+    if "COMPLETED" not in df.columns:
+        raise ValueError("Column 'COMPLETED' not found in Sheet 1.")
+
     df["COMPLETED"] = df["COMPLETED"].astype(str).str.upper().str.strip()
     df = df[df["COMPLETED"] == "YES"].copy()
 
@@ -58,7 +61,6 @@ def load_data():
 # ------------------------------
 df = load_data()
 
-# ✅ IST TIME FIX
 last_updated = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%b-%Y %I:%M:%S %p IST")
 
 if df.empty:
@@ -71,7 +73,11 @@ completed_matches_count = df.shape[0]
 # ------------------------------
 # TRANSFORM
 # ------------------------------
-long_df = df.melt(id_vars=["Match"], var_name="Player", value_name="Points")
+long_df = df.melt(
+    id_vars=["Match", "COMPLETED"],
+    var_name="Player",
+    value_name="Points"
+)
 long_df["Points"] = pd.to_numeric(long_df["Points"], errors="coerce").fillna(0)
 
 # ------------------------------
@@ -182,8 +188,8 @@ player2 = p2.selectbox("Player 2", player_list, index=1 if len(player_list) > 1 
 
 if player1 != player2:
 
-    df1 = long_df[long_df["Player"] == player1][["Match", "Points"]]
-    df2 = long_df[long_df["Player"] == player2][["Match", "Points"]]
+    df1 = long_df[long_df["Player"] == player1][["Match", "Points"]].copy()
+    df2 = long_df[long_df["Player"] == player2][["Match", "Points"]].copy()
 
     df1.rename(columns={"Points": player1}, inplace=True)
     df2.rename(columns={"Points": player2}, inplace=True)
@@ -203,7 +209,8 @@ if player1 != player2:
         height=400
     )
 
-    fig2.update_yaxes(rangemode="tozero")
+    fig2.update_yaxes(rangemode="tozero",
+title_text="Points")
 
     st.plotly_chart(fig2, use_container_width=True)
 
@@ -216,7 +223,7 @@ st.subheader("📈 Player Trend")
 
 player = st.selectbox("Select Player", player_list)
 
-trend = long_df[long_df["Player"] == player]
+trend = long_df[long_df["Player"] == player].copy()
 trend["Match"] = pd.Categorical(trend["Match"], categories=match_order, ordered=True)
 trend = trend.sort_values("Match")
 
